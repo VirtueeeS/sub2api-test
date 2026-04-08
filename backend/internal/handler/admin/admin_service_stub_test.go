@@ -191,14 +191,10 @@ func (s *stubAdminService) BatchSetGroupRateMultipliers(_ context.Context, _ int
 	return nil
 }
 
-func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode string, sortArgs ...string) ([]service.Account, int64, error) {
+func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode, sortBy, sortOrder string) ([]service.Account, int64, error) {
 	s.mu.Lock()
-	if len(sortArgs) > 0 {
-		s.lastListAccounts.sortBy = sortArgs[0]
-	}
-	if len(sortArgs) > 1 {
-		s.lastListAccounts.sortOrder = sortArgs[1]
-	}
+	s.lastListAccounts.sortBy = sortBy
+	s.lastListAccounts.sortOrder = sortOrder
 	s.mu.Unlock()
 	return s.accounts, int64(len(s.accounts)), nil
 }
@@ -392,6 +388,7 @@ func (s *stubAdminService) CheckProxyQuality(ctx context.Context, id int64) (*se
 			{Target: "openai", Status: "pass", HTTPStatus: 401},
 			{Target: "anthropic", Status: "pass", HTTPStatus: 401},
 			{Target: "gemini", Status: "pass", HTTPStatus: 200},
+			{Target: "sora", Status: "pass", HTTPStatus: 401},
 		},
 	}, nil
 }

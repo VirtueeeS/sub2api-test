@@ -456,19 +456,11 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *accountRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Account, *pagination.PaginationResult, error) {
-	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "")
+	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "", "", service.AccountListSortOrderDesc)
 }
 
-func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string, sortArgs ...string) ([]service.Account, *pagination.PaginationResult, error) {
+func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode, sortBy, sortOrder string) ([]service.Account, *pagination.PaginationResult, error) {
 	q := r.client.Account.Query()
-	sortBy := ""
-	sortOrder := service.AccountListSortOrderDesc
-	if len(sortArgs) > 0 {
-		sortBy = strings.TrimSpace(sortArgs[0])
-	}
-	if len(sortArgs) > 1 {
-		sortOrder = service.NormalizeAccountListSortOrder(strings.TrimSpace(sortArgs[1]))
-	}
 
 	if platform != "" {
 		q = q.Where(dbaccount.PlatformEQ(platform))
@@ -478,14 +470,6 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 	}
 	if status != "" {
 		switch status {
-		case service.StatusActive:
-			q = q.Where(
-				dbaccount.StatusEQ(status),
-				dbaccount.Or(
-					dbaccount.RateLimitResetAtIsNil(),
-					dbaccount.RateLimitResetAtLTE(time.Now()),
-				),
-			)
 		case "rate_limited":
 			q = q.Where(dbaccount.RateLimitResetAtGT(time.Now()))
 		case "temp_unschedulable":
@@ -538,7 +522,6 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 			return nil, nil, err
 		}
 		sortAccountsByUsageTotals(accounts, usageTotals, sortOrder)
-
 		start := params.Offset()
 		if start > len(accounts) {
 			start = len(accounts)
@@ -547,7 +530,6 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 		if end > len(accounts) {
 			end = len(accounts)
 		}
-
 		outAccounts, err := r.accountsToService(ctx, accounts[start:end])
 		if err != nil {
 			return nil, nil, err
@@ -642,18 +624,17 @@ func (r *accountRepository) listTodayUsageTotalsByAccountIDs(ctx context.Context
 	if len(ids) == 0 {
 		return result, nil
 	}
-
+	todayStart := timezone.Today()
 	rows, err := r.sql.QueryContext(ctx, `
 		SELECT account_id, COALESCE(SUM(total_cost * COALESCE(account_rate_multiplier, 1)), 0) AS usage_total
 		FROM usage_logs
 		WHERE account_id = ANY($1) AND created_at >= $2
 		GROUP BY account_id
-	`, pq.Array(ids), timezone.Today())
+	`, pq.Array(ids), todayStart)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	for rows.Next() {
 		var accountID int64
 		var usageTotal float64
@@ -1834,13 +1815,20 @@ func itoa(v int) string {
 }
 
 // FindByExtraField 根据 extra 字段中的键值对查找账号。
+// 该方法限定 platform='sora'，避免误查询其他平台的账号。
 // 使用 PostgreSQL JSONB @> 操作符进行高效查询（需要 GIN 索引支持）。
 //
+// 应用场景：查找通过 linked_openai_account_id 关联的 Sora 账号。
+//
 // FindByExtraField finds accounts by key-value pairs in the extra field.
+// Limited to platform='sora' to avoid querying accounts from other platforms.
 // Uses PostgreSQL JSONB @> operator for efficient queries (requires GIN index).
+//
+// Use case: Finding Sora accounts linked via linked_openai_account_id.
 func (r *accountRepository) FindByExtraField(ctx context.Context, key string, value any) ([]service.Account, error) {
 	accounts, err := r.client.Account.Query().
 		Where(
+			dbaccount.PlatformEQ("sora"), // 限定平台为 sora
 			dbaccount.DeletedAtIsNil(),
 			func(s *entsql.Selector) {
 				path := sqljson.Path(key)
