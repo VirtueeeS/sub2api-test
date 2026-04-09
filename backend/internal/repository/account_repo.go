@@ -585,7 +585,7 @@ func sortAccountsByUsageTotals(accounts []*dbent.Account, usageTotals map[int64]
 	})
 }
 
-func accountListOrderTerms(sortBy, sortOrder string) []func(*entsql.Selector) {
+func accountListOrderTerms(sortBy, sortOrder string) []dbaccount.OrderOption {
 	var field string
 	switch sortBy {
 	case service.AccountListSortByName:
@@ -607,13 +607,13 @@ func accountListOrderTerms(sortBy, sortOrder string) []func(*entsql.Selector) {
 	}
 
 	if service.NormalizeAccountListSortOrder(sortOrder) == service.AccountListSortOrderAsc {
-		return []func(*entsql.Selector){
+		return []dbaccount.OrderOption{
 			dbent.Asc(field),
 			dbent.Asc(dbaccount.FieldID),
 		}
 	}
 
-	return []func(*entsql.Selector){
+	return []dbaccount.OrderOption{
 		dbent.Desc(field),
 		dbent.Desc(dbaccount.FieldID),
 	}
